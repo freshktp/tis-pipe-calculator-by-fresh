@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>โปรแกรมคำนวณเหล็กเสริมท่อคอนกรีต (มอก.)</title>
+    
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Load Three.js for 3D Simulation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <!-- Load React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <!-- Load Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Load Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    
+    <style>
+        body { font-family: 'Inter', 'Sarabun', sans-serif; background-color: #f8fafc; }
+        .glass-panel { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border: 1px solid #e2e8f0; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .animate-fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo, useEffect, useRef } = React;
+
+        const roundPipeData = {
+            class1: {
+                300: { inner: 2.1 },
+                400: { inner: 3.3 },
+                500: { inner: 4.7 },
+                600: { inner: 6.4 },
+                800: { inner: 9.4, outer: 5.6 },
+                1000: { inner: 12.0, outer: 7.2 },
+                1200: { inner: 15.5, outer: 9.3 }
+            },
+            class2: {
+                300: { inner: 1.5 },
+                400: { inner: 2.4 },
+                500: { inner: 3.8 },
+                600: { inner: 5.7 },
+                800: { inner: 6.3, outer: 3.3 },
+                1000: { inner: 7.0, outer: 4.2 },
+                1200: { inner: 8.9, outer: 5.3 },
+                1500: { inner: 12.5, outer: 7.5 },
+                1750: { inner: 16.0, outer: 9.6 }
+            },
+            class3: {
+                300: { inner: 1.5 },
+                400: { inner: 1.5 },
+                500: { inner: 1.5 },
+                600: { inner: 1.5 },
+                800: { inner: 4.1 },
+                1000: { inner: 4.1, outer: 2.5 },
+                1200: { inner: 5.1, outer: 3.1 },
+                1500: { inner: 7.2, outer: 4.3 },
+                1750: { inner: 10.0, outer: 6.0 },
+                2000: { inner: 12.6, outer: 7.6 },
+                2250: { inner: 14.6, outer: 8.8 },
+                2500: { inner: 18.1, outer: 10.9 }
+            },
+            class4: {
+                800: { inner: 3.1 },
+                1000: { inner: 3.0, outer: 1.8 },
+                1200: { inner: 3.8, outer: 2.3 },
+                1500: { inner: 5.3, outer: 3.2 },
+                1750: { inner: 7.1, outer: 4.3 },
+                2000: { inner: 8.9, outer: 5.3 },
+                2250: { inner: 10.8, outer: 6.5 },
+                2500: { inner: 13.6, outer: 8.2 }
+            },
+            maxSpacing: {
+                300: 80, 400: 80, 500: 80, 600: 80, 800: 80, 
+                1000: 100, 1200: 110, 1500: 125, 
+                1750: 150, 2000: 150, 2250: 150, 2500: 150
+            }
+        };
+
+        const roundThickness = {
+            300: 50, 400: 60, 500: 70, 600: 75, 800: 95, 
+            1000: 110, 1200: 125, 1500: 150, 1750: 170, 2000: 190, 2250: 210, 2500: 240
+        };
+
+        const boxDataMaster = [
+            // มอก. 1164 (ใต้ทางเท้า) - ไม่มีระดับดินถม (ครอบคลุมถึง 3m)
+            { std: '1164', cover: 'all', S: 900, R: 600, T: 100, As1: 210, As2: 210, As3: 210, As4: 210, LTop: 240, LBot: 240, LSide: 170 },
+            { std: '1164', cover: 'all', S: 900, R: 900, T: 100, As1: 210, As2: 210, As3: 210, As4: 210, LTop: 240, LBot: 240, LSide: 240 },
+            { std: '1164', cover: 'all', S: 1200, R: 900, T: 125, As1: 280, As2: 250, As3: 280, As4: 280, LTop: 370, LBot: 370, LSide: 290 },
+            { std: '1164', cover: 'all', S: 1200, R: 1200, T: 125, As1: 250, As2: 250, As3: 250, As4: 250, LTop: 370, LBot: 370, LSide: 370 },
+            { std: '1164', cover: 'all', S: 1500, R: 1500, T: 150, As1: 360, As2: 340, As3: 300, As4: 540, LTop: 540, LBot: 540, LSide: 540 },
+            { std: '1164', cover: 'all', S: 1800, R: 1800, T: 175, As1: 400, As2: 420, As3: 360, As4: 760, LTop: 760, LBot: 760, LSide: 650 },
+            { std: '1164', cover: 'all', S: 2100, R: 2100, T: 200, As1: 530, As2: 510, As3: 1000, As4: 400, LTop: 1000, LBot: 1000, LSide: 1000 },
+            { std: '1164', cover: 'all', S: 2400, R: 2400, T: 200, As1: 610, As2: 660, As3: 400, As4: 1120, LTop: 1120, LBot: 1120, LSide: 880 },
+
+            // มอก. 1166 (ใต้ถนน)
+            { std: '1166', cover: '0.6-0.9', S: 900, R: 600, T: 100, As1: 280, As2: 450, As3: 450, As4: 220, LTop: 240, LBot: 240, LSide: 170 },
+            { std: '1166', cover: '0.9-1.5', S: 900, R: 600, T: 100, As1: 220, As2: 220, As3: 220, As4: 220, LTop: 240, LBot: 240, LSide: 170 },
+            { std: '1166', cover: '1.5-3.0', S: 900, R: 600, T: 100, As1: 220, As2: 220, As3: 220, As4: 220, LTop: 240, LBot: 240, LSide: 170 },
+            { std: '1166', cover: '0.6-0.9', S: 900, R: 900, T: 100, As1: 220, As2: 530, As3: 530, As4: 220, LTop: 240, LBot: 240, LSide: 240 },
+            { std: '1166', cover: '0.9-1.5', S: 900, R: 900, T: 100, As1: 220, As2: 220, As3: 240, As4: 220, LTop: 240, LBot: 240, LSide: 240 },
+            { std: '1166', cover: '1.5-3.0', S: 900, R: 900, T: 100, As1: 220, As2: 240, As3: 240, As4: 220, LTop: 240, LBot: 240, LSide: 240 },
+            
+            { std: '1166', cover: '0.6-0.9', S: 1200, R: 900, T: 125, As1: 340, As2: 600, As3: 530, As4: 260, LTop: 370, LBot: 370, LSide: 290 },
+            { std: '1166', cover: '0.9-1.5', S: 1200, R: 900, T: 125, As1: 260, As2: 260, As3: 280, As4: 260, LTop: 370, LBot: 370, LSide: 290 },
+            { std: '1166', cover: '1.5-3.0', S: 1200, R: 900, T: 125, As1: 260, As2: 300, As3: 320, As4: 260, LTop: 370, LBot: 370, LSide: 290 },
+            { std: '1166', cover: '0.6-0.9', S: 1200, R: 1200, T: 125, As1: 280, As2: 660, As3: 600, As4: 260, LTop: 370, LBot: 370, LSide: 370 },
+            { std: '1166', cover: '0.9-1.5', S: 1200, R: 1200, T: 125, As1: 260, As2: 300, As3: 320, As4: 260, LTop: 370, LBot: 370, LSide: 370 },
+            { std: '1166', cover: '1.5-3.0', S: 1200, R: 1200, T: 125, As1: 260, As2: 340, As3: 320, As4: 260, LTop: 370, LBot: 370, LSide: 370 },
+            
+            { std: '1166', cover: '0.6-0.9', S: 1500, R: 1200, T: 150, As1: 700, As2: 300, As3: 540, As4: 540, LTop: 530, LBot: 450, LSide: 390 },
+            { std: '1166', cover: '0.9-1.5', S: 1500, R: 1200, T: 150, As1: 340, As2: 300, As3: 340, As4: 300, LTop: 540, LBot: 540, LSide: 450 },
+            { std: '1166', cover: '1.5-3.0', S: 1500, R: 1200, T: 150, As1: 300, As2: 410, As3: 300, As4: 450, LTop: 540, LBot: 540, LSide: 410 },
+            { std: '1166', cover: '0.6-0.9', S: 1500, R: 1500, T: 150, As1: 600, As2: 750, As3: 300, As4: 540, LTop: 540, LBot: 340, LSide: 540 },
+            { std: '1166', cover: '0.9-1.5', S: 1500, R: 1500, T: 150, As1: 300, As2: 390, As3: 360, As4: 540, LTop: 300, LBot: 540, LSide: 540 },
+            { std: '1166', cover: '1.5-3.0', S: 1500, R: 1500, T: 150, As1: 450, As2: 300, As3: 540, As4: 300, LTop: 430, LBot: 540, LSide: 540 },
+
+            { std: '1166', cover: '0.6-0.9', S: 1800, R: 1500, T: 175, As1: 770, As2: 550, As3: 360, As4: 760, LTop: 760, LBot: 650, LSide: 410 },
+            { std: '1166', cover: '0.9-1.5', S: 1800, R: 1500, T: 175, As1: 410, As2: 360, As3: 360, As4: 760, LTop: 410, LBot: 760, LSide: 650 },
+            { std: '1166', cover: '1.5-3.0', S: 1800, R: 1500, T: 175, As1: 490, As2: 360, As3: 650, As4: 510, LTop: 360, LBot: 760, LSide: 760 },
+            { std: '1166', cover: '0.6-0.9', S: 1800, R: 1800, T: 175, As1: 360, As2: 360, As3: 810, As4: 600, LTop: 760, LBot: 760, LSide: 760 },
+            { std: '1166', cover: '0.9-1.5', S: 1800, R: 1800, T: 175, As1: 760, As2: 360, As3: 430, As4: 430, LTop: 360, LBot: 760, LSide: 760 },
+            { std: '1166', cover: '1.5-3.0', S: 1800, R: 1800, T: 175, As1: 360, As2: 760, As3: 360, As4: 510, LTop: 550, LBot: 760, LSide: 760 },
+            
+            { std: '1166', cover: '0.6-0.9', S: 2100, R: 2100, T: 200, As1: 620, As2: 410, As3: 470, As4: 870, LTop: 1000, LBot: 1000, LSide: 1000 },
+            { std: '1166', cover: '0.9-1.5', S: 2100, R: 2100, T: 200, As1: 490, As2: 470, As3: 490, As4: 410, LTop: 1000, LBot: 1000, LSide: 1000 },
+            { std: '1166', cover: '1.5-3.0', S: 2100, R: 2100, T: 200, As1: 660, As2: 410, As3: 470, As4: 620, LTop: 1000, LBot: 1000, LSide: 1000 },
+            
+            { std: '1166', cover: '0.6-0.9', S: 2400, R: 2400, T: 200, As1: 490, As2: 1000, As3: 700, As4: 410, LTop: 1000, LBot: 1120, LSide: 1120 },
+            { std: '1166', cover: '0.9-1.5', S: 2400, R: 2400, T: 200, As1: 580, As2: 600, As3: 410, As4: 410, LTop: 1120, LBot: 1000, LSide: 1120 },
+            { std: '1166', cover: '1.5-3.0', S: 2400, R: 2400, T: 200, As1: 410, As2: 830, As3: 790, As4: 430, LTop: 1120, LBot: 1120, LSide: 1000 },
+        ];
+
+        const ThreeDViewer = ({ mode, isDoubleLayer, roundLongCount }) => {
+            const mountRef = useRef(null);
+
+            useEffect(() => {
+                if (!mountRef.current || !window.THREE) return;
+                const width = mountRef.current.clientWidth;
+                const height = mountRef.current.clientHeight;
+
+                const scene = new THREE.Scene();
+                const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 2000);
+                camera.position.set(400, 300, 500);
+
+                const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+                renderer.setSize(width, height);
+                renderer.setPixelRatio(window.devicePixelRatio);
+                
+                while (mountRef.current.firstChild) mountRef.current.removeChild(mountRef.current.firstChild);
+                mountRef.current.appendChild(renderer.domElement);
+
+                const controls = new THREE.OrbitControls(camera, renderer.domElement);
+                controls.enableDamping = true;
+                controls.dampingFactor = 0.05;
+                controls.autoRotate = true;
+                controls.autoRotateSpeed = 1.5;
+
+                const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+                scene.add(ambientLight);
+                const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+                dirLight.position.set(200, 500, 300);
+                scene.add(dirLight);
+
+                const group = new THREE.Group();
+                scene.add(group);
+
+                const pipeLength = 400;
+                const concreteMat = new THREE.MeshPhysicalMaterial({ color: 0xf1f5f9, transparent: true, opacity: 0.35, roughness: 0.8, side: THREE.DoubleSide, depthWrite: false });
+                const longMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.4, roughness: 0.3 });
+
+                if (mode === 'round') {
+                    const shape = new THREE.Shape();
+                    shape.absarc(0, 0, 160, 0, Math.PI * 2, false);
+                    const holePath = new THREE.Path();
+                    holePath.absarc(0, 0, 110, 0, Math.PI * 2, true);
+                    shape.holes.push(holePath);
+
+                    const geometry = new THREE.ExtrudeGeometry(shape, { depth: pipeLength, bevelEnabled: false, curveSegments: 64 });
+                    geometry.center();
+                    group.add(new THREE.Mesh(geometry, concreteMat));
+
+                    const steelMatInner = new THREE.MeshStandardMaterial({ color: 0x3b82f6, metalness: 0.5 });
+                    const steelMatOuter = new THREE.MeshStandardMaterial({ color: 0x8b5cf6, metalness: 0.5 });
+                    
+                    for(let z = -pipeLength/2 + 20; z <= pipeLength/2 - 20; z += 40) {
+                        if (isDoubleLayer) {
+                            const ringInner = new THREE.Mesh(new THREE.TorusGeometry(122, 2.5, 8, 48), steelMatInner);
+                            const ringOuter = new THREE.Mesh(new THREE.TorusGeometry(148, 2.5, 8, 48), steelMatOuter);
+                            ringInner.position.z = ringOuter.position.z = z;
+                            group.add(ringInner, ringOuter);
+                        } else {
+                            const ring = new THREE.Mesh(new THREE.TorusGeometry(135, 3, 8, 48), steelMatInner);
+                            ring.position.z = z; group.add(ring);
+                        }
+                    }
+                    
+                    const longBarCount = roundLongCount || (isDoubleLayer ? 16 : 8);
+                    for(let i = 0; i < longBarCount; i++) {
+                        const angle = (i / longBarCount) * Math.PI * 2;
+                        let r = 135;
+                        if (isDoubleLayer) {
+                            r = i % 2 === 0 ? 122 : 148;
+                        }
+                        const bar = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, pipeLength, 8), longMat);
+                        bar.position.set(Math.cos(angle) * r, Math.sin(angle) * r, 0);
+                        bar.rotation.x = Math.PI / 2;
+                        group.add(bar);
+                    }
+                } else {
+                    const widthOuter = 300;
+                    const heightOuter = 240;
+                    const widthInner = 200;
+                    const heightInner = 140;
+
+                    const shape = new THREE.Shape();
+                    shape.moveTo(-widthOuter/2, -heightOuter/2);
+                    shape.lineTo(widthOuter/2, -heightOuter/2);
+                    shape.lineTo(widthOuter/2, heightOuter/2);
+                    shape.lineTo(-widthOuter/2, heightOuter/2);
+                    shape.lineTo(-widthOuter/2, -heightOuter/2);
+
+                    const holePath = new THREE.Path();
+                    const chamfer = 20;
+                    holePath.moveTo(-widthInner/2 + chamfer, -heightInner/2);
+                    holePath.lineTo(widthInner/2 - chamfer, -heightInner/2);
+                    holePath.lineTo(widthInner/2, -heightInner/2 + chamfer);
+                    holePath.lineTo(widthInner/2, heightInner/2 - chamfer);
+                    holePath.lineTo(widthInner/2 - chamfer, heightInner/2);
+                    holePath.lineTo(-widthInner/2 + chamfer, heightInner/2);
+                    holePath.lineTo(-widthInner/2, heightInner/2 - chamfer);
+                    holePath.lineTo(-widthInner/2, -heightInner/2 + chamfer);
+                    holePath.lineTo(-widthInner/2 + chamfer, -heightInner/2);
+                    shape.holes.push(holePath);
+
+                    const geometry = new THREE.ExtrudeGeometry(shape, { depth: pipeLength, bevelEnabled: false });
+                    geometry.center();
+                    group.add(new THREE.Mesh(geometry, concreteMat));
+
+                    const matAs1 = new THREE.MeshStandardMaterial({ color: 0x6366f1, metalness: 0.5 }); 
+                    const matAs2 = new THREE.MeshStandardMaterial({ color: 0x0ea5e9, metalness: 0.5 }); 
+                    const matAs3 = new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.5 }); 
+                    const matAs4 = new THREE.MeshStandardMaterial({ color: 0x14b8a6, metalness: 0.5 }); 
+
+                    for(let z = -pipeLength/2 + 20; z <= pipeLength/2 - 20; z += 40) {
+                        const barAs1L = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, heightOuter - 20, 8), matAs1);
+                        barAs1L.position.set(-widthOuter/2 + 15, 0, z);
+                        
+                        const barAs1R = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, heightOuter - 20, 8), matAs1);
+                        barAs1R.position.set(widthOuter/2 - 15, 0, z);
+
+                        const barAs2 = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, widthOuter - 20, 8), matAs2);
+                        barAs2.position.set(0, heightOuter/2 - 15, z);
+                        barAs2.rotation.z = Math.PI / 2;
+
+                        const barAs3 = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, widthOuter - 20, 8), matAs3);
+                        barAs3.position.set(0, -heightOuter/2 + 15, z);
+                        barAs3.rotation.z = Math.PI / 2;
+
+                        const innerPath = new THREE.CurvePath();
+                        const p1 = new THREE.Vector3(-widthInner/2 - 15, -heightInner/2 + 30, z);
+                        const p2 = new THREE.Vector3(-widthInner/2 - 15, heightInner/2 - 30, z);
+                        const p3 = new THREE.Vector3(-widthInner/2 + 30, heightInner/2 + 15, z);
+                        const p4 = new THREE.Vector3(widthInner/2 - 30, heightInner/2 + 15, z);
+                        const p5 = new THREE.Vector3(widthInner/2 + 15, heightInner/2 - 30, z);
+                        const p6 = new THREE.Vector3(widthInner/2 + 15, -heightInner/2 + 30, z);
+                        const p7 = new THREE.Vector3(widthInner/2 - 30, -heightInner/2 - 15, z);
+                        const p8 = new THREE.Vector3(-widthInner/2 + 30, -heightInner/2 - 15, z);
+                        
+                        const l1 = new THREE.LineCurve3(p1, p2);
+                        const l2 = new THREE.LineCurve3(p2, p3);
+                        const l3 = new THREE.LineCurve3(p3, p4);
+                        const l4 = new THREE.LineCurve3(p4, p5);
+                        const l5 = new THREE.LineCurve3(p5, p6);
+                        const l6 = new THREE.LineCurve3(p6, p7);
+                        const l7 = new THREE.LineCurve3(p7, p8);
+                        const l8 = new THREE.LineCurve3(p8, p1);
+
+                        innerPath.add(l1); innerPath.add(l2); innerPath.add(l3); innerPath.add(l4);
+                        innerPath.add(l5); innerPath.add(l6); innerPath.add(l7); innerPath.add(l8);
+
+                        const tubeGeo = new THREE.TubeGeometry(innerPath, 32, 2, 8, true);
+                        const barAs4 = new THREE.Mesh(tubeGeo, matAs4);
+
+                        group.add(barAs1L, barAs1R, barAs2, barAs3, barAs4);
+                    }
+                    
+                    const longMatBox = new THREE.MeshStandardMaterial({ color: 0xa855f7, metalness: 0.5 }); 
+                    for(let x = -widthOuter/2 + 30; x <= widthOuter/2 - 30; x += 40) {
+                        const barTop = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, pipeLength, 8), longMatBox);
+                        barTop.position.set(x, heightOuter/2 - 15, 0);
+                        barTop.rotation.x = Math.PI / 2;
+                        
+                        const barBot = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, pipeLength, 8), longMatBox);
+                        barBot.position.set(x, -heightOuter/2 + 15, 0);
+                        barBot.rotation.x = Math.PI / 2;
+                        group.add(barTop, barBot);
+                    }
+                    for(let y = -heightOuter/2 + 30; y <= heightOuter/2 - 30; y += 40) {
+                        const barL = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, pipeLength, 8), longMatBox);
+                        barL.position.set(-widthOuter/2 + 15, y, 0);
+                        barL.rotation.x = Math.PI / 2;
+                        
+                        const barR = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, pipeLength, 8), longMatBox);
+                        barR.position.set(widthOuter/2 - 15, y, 0);
+                        barR.rotation.x = Math.PI / 2;
+                        group.add(barL, barR);
+                    }
+                }
+
+                const animate = () => {
+                    requestAnimationFrame(animate);
+                    controls.update();
+                    renderer.render(scene, camera);
+                };
+                animate();
+
+                const handleResize = () => {
+                    if(!mountRef.current) return;
+                    camera.aspect = mountRef.current.clientWidth / mountRef.current.clientHeight;
+                    camera.updateProjectionMatrix();
+                    renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
+                };
+                window.addEventListener('resize', handleResize);
+
+                return () => {
+                    window.removeEventListener('resize', handleResize);
+                    mountRef.current?.removeChild(renderer.domElement);
+                };
+            }, [mode, isDoubleLayer, roundLongCount]);
+
+            return <div ref={mountRef} className="w-full h-[400px] cursor-move bg-slate-50"></div>;
+        };
+
+        const BoxResultCard = ({ title, calc, icon, colorClass, currentDia, onDiaChange }) => {
+            if (!calc) return null;
+            return (
+                <div className={`p-4 rounded-xl border ${calc.isPass ? 'bg-white border-slate-200' : 'bg-red-50 border-red-200'} shadow-sm flex flex-col h-full`}>
+                    <div className="flex justify-between items-center mb-3">
+                        <div className="flex items-center gap-2">
+                            <i className={`ph-fill ${icon} text-lg ${colorClass}`}></i>
+                            <h3 className="text-sm font-bold text-slate-800">{title}</h3>
+                        </div>
+                        <span className="text-xs font-semibold px-2 py-1 bg-slate-100 rounded text-slate-600">
+                            Req: {Number(calc.reqAs).toFixed(1)} {calc.isLongitudinalBox ? 'มม.²' : 'มม.²/ม.'}
+                        </span>
+                    </div>
+
+                    <div className="flex-1 flex flex-col gap-2">
+                        <div className="flex justify-between items-center bg-slate-50 p-2 rounded border border-slate-100">
+                            <span className="text-xs text-slate-500 font-medium">ขนาดเหล็ก (Ø)</span>
+                            <select 
+                                value={currentDia} 
+                                onChange={(e) => onDiaChange(Number(e.target.value))}
+                                className="text-sm font-bold text-blue-700 bg-white border border-slate-200 rounded px-2 py-1 outline-none focus:border-blue-500 shadow-sm cursor-pointer hover:border-blue-300 transition"
+                            >
+                                {[4, 5, 6, 7, 8, 9, 10, 12].map(d => (
+                                    <option key={d} value={d}>Ø {d} มม.</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="flex justify-between items-center bg-slate-50 p-2 rounded">
+                            <span className="text-xs text-slate-500">ระยะห่าง (Pitch)</span>
+                            <span className="text-sm font-bold text-slate-800">
+                                {calc.actualSpacing > 0 ? `@ ${calc.actualSpacing} มม.` : '-'}
+                            </span>
+                        </div>
+                        
+                        {calc.spacingWarning && (
+                            <div className="text-[10px] text-orange-600 leading-tight">
+                                *{calc.spacingWarning}
+                            </div>
+                        )}
+                        {!calc.spacingWarning && calc.reqSpacing > calc.actualSpacing && calc.actualSpacing > 0 && calc.pipeMode === 'box' && (
+                            <div className="text-[10px] text-blue-600 leading-tight">
+                                *ปรับเข้าเครื่องจักรอัตโนมัติ (Step 50 มม.)
+                            </div>
+                        )}
+
+                        <div className="flex justify-between items-center bg-slate-50 p-2 rounded">
+                            <span className="text-xs text-slate-500">จำนวนเส้น</span>
+                            <span className="text-sm font-bold text-slate-800">
+                                {calc.barsPerMeter} {calc.isLongitudinalBox ? 'เส้น/ด้าน' : 'เส้น/ม.'}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div className={`mt-3 pt-2 border-t flex justify-between items-center ${calc.isPass ? 'border-slate-100' : 'border-red-200'}`}>
+                        <span className="text-xs text-slate-500">หน้าตัดจริงที่ได้</span>
+                        <div className="flex items-center gap-1">
+                            <span className={`text-sm font-bold ${calc.isPass ? 'text-green-600' : 'text-red-600'}`}>
+                                {calc.providedAs}
+                            </span>
+                            {calc.isPass ? 
+                                <i className="ph-bold ph-check-circle text-green-500"></i> : 
+                                <i className="ph-bold ph-x-circle text-red-500"></i>
+                            }
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const calculateSteel = (reqAs, barDia, maxSpacingRule, pipeMode = 'round', isLongitudinalBox = false, faceWidth = 1000) => {
+            if (!reqAs || reqAs <= 0) return null;
+            
+            const singleBarArea = Math.PI * Math.pow(barDia / 2, 2);
+            
+            let reqSpacing;
+            if (isLongitudinalBox) {
+                reqSpacing = faceWidth / (reqAs / singleBarArea);
+            } else {
+                reqSpacing = (1000 * singleBarArea) / reqAs;
+            }
+            
+            let maxAllowed = Math.min(reqSpacing, maxSpacingRule);
+            let actualSpacing;
+
+            if (pipeMode === 'box') {
+                maxAllowed = Math.min(maxAllowed, 300);
+                actualSpacing = Math.floor(maxAllowed / 50) * 50; 
+            } else {
+                actualSpacing = Math.floor(maxAllowed); 
+            }
+            
+            let providedAs, barCount;
+            if (actualSpacing > 0) {
+                if (isLongitudinalBox) {
+                    barCount = Math.floor(faceWidth / actualSpacing) + 1;
+                    providedAs = (barCount * singleBarArea).toFixed(2);
+                } else {
+                    if (pipeMode === 'round') {
+                        providedAs = ((1000 / actualSpacing) * singleBarArea).toFixed(2);
+                        barCount = Math.ceil(1000 / actualSpacing);
+                    } else {
+                        barCount = Math.ceil(1000 / actualSpacing);
+                        providedAs = (barCount * singleBarArea).toFixed(2);
+                    }
+                }
+            } else {
+                barCount = 0;
+                providedAs = "0.00";
+            }
+            
+            let warningMsg = "";
+            if (actualSpacing === 0) warningMsg = "ลวดเล็กเกินไป (หน้าตัดไม่พอ)";
+            else if (reqSpacing > maxSpacingRule) warningMsg = `จำกัดระยะตาม มอก. (≤ ${maxSpacingRule})`;
+
+            return {
+                reqAs,
+                singleBarArea: singleBarArea.toFixed(2),
+                reqSpacing: Math.floor(reqSpacing),
+                maxSpacingRule,
+                actualSpacing,
+                barsPerMeter: barCount,
+                providedAs,
+                isPass: actualSpacing > 0 && parseFloat(providedAs) >= reqAs,
+                spacingWarning: warningMsg,
+                isLongitudinalBox,
+                pipeMode
+            };
+        };
+
+        const App = () => {
+            const [mode, setMode] = useState('round');
+            
+            const [roundClass, setRoundClass] = useState("class3");
+            const [roundSize, setRoundSize] = useState("600");
+            const [longRoundCount, setLongRoundCount] = useState(8);
+            
+            const [boxStd, setBoxStd] = useState("1166");
+            const [boxCover, setBoxCover] = useState("0.6-0.9");
+            const [boxS, setBoxS] = useState(900);
+            const [boxR, setBoxR] = useState(600);
+            
+            const [showDiagram, setShowDiagram] = useState(false);
+            
+            const [barDias, setBarDias] = useState({
+                single: 6, inner: 6, outer: 6, longRound: 4,
+                As1: 6, As2: 6, As3: 6, As4: 6,
+                LTop: 6, LBot: 6, LSide: 6
+            });
+
+            const [costs, setCosts] = useState({
+                cementKg: 350, cementPrice: 2.6,
+                sandKg: 800, sandPrice: 0.5,
+                stoneKg: 1050, stonePrice: 0.45,
+                steelPrice: 26,
+                steelAllowance: 20
+            });
+
+            const availableBoxS = useMemo(() => {
+                const filtered = boxDataMaster.filter(d => d.std === boxStd && (boxStd === '1164' || d.cover === boxCover));
+                return [...new Set(filtered.map(d => d.S))].sort((a,b)=>a-b);
+            }, [boxStd, boxCover]);
+
+            const availableBoxR = useMemo(() => {
+                const filtered = boxDataMaster.filter(d => d.std === boxStd && (boxStd === '1164' || d.cover === boxCover) && d.S === boxS);
+                return [...new Set(filtered.map(d => d.R))].sort((a,b)=>a-b);
+            }, [boxStd, boxCover, boxS]);
+
+            useEffect(() => {
+                if (mode === 'round') {
+                    const sizes = Object.keys(roundPipeData[roundClass] || {});
+                    if (sizes.length > 0 && !sizes.includes(roundSize)) {
+                        setRoundSize(sizes[0]);
+                    }
+                }
+            }, [roundClass, roundSize, mode]);
+
+            useEffect(() => {
+                if (mode === 'round') {
+                    const specs = roundPipeData[roundClass]?.[roundSize];
+                    if (specs) {
+                        const isDouble = !!specs.outer;
+                        const minBars = Number(roundSize) <= 500 ? 6 : (isDouble ? 16 : 8);
+                        setLongRoundCount(minBars);
+                    }
+                }
+            }, [roundSize, roundClass, mode]);
+
+            useEffect(() => {
+                if (mode === 'box' && availableBoxS.length > 0 && !availableBoxS.includes(boxS)) {
+                    setBoxS(availableBoxS[0]);
+                }
+            }, [availableBoxS, boxS, mode]);
+
+            useEffect(() => {
+                if (mode === 'box' && availableBoxR.length > 0 && !availableBoxR.includes(boxR)) {
+                    setBoxR(availableBoxR[0]);
+                }
+            }, [availableBoxR, boxR, mode]);
+
+            const updateCost = (key, value) => setCosts(prev => ({ ...prev, [key]: Number(value) }));
+            const updateBarDia = (key, value) => setBarDias(prev => ({ ...prev, [key]: Number(value) }));
+
+            const getBestDia = (reqAs, maxSpacingRule, pipeMode = 'round', isLongitudinalBox = false, faceWidth = 1000) => {
+                const availableDias = [4, 5, 6, 7, 8, 9, 10, 12];
+                let bestDia = 12; 
+                let minDiff = Infinity;
+                
+                for (const dia of availableDias) {
+                    const calc = calculateSteel(reqAs, dia, maxSpacingRule, pipeMode, isLongitudinalBox, faceWidth);
+                    if (calc && calc.isPass && calc.actualSpacing >= (pipeMode === 'box' ? 50 : 20)) {
+                        const diff = parseFloat(calc.providedAs) - reqAs;
+                        if (diff >= 0 && diff < minDiff) { 
+                            minDiff = diff; 
+                            bestDia = dia; 
+                        }
+                    }
+                }
+                return bestDia;
+            };
+
+            const handleAutoAdjust = (isUniform = false) => {
+                const newDias = { ...barDias };
+                if (mode === 'round') {
+                    const specs = roundPipeData[roundClass]?.[roundSize];
+                    if(!specs) return;
+                    const maxTISSpacing = roundPipeData.maxSpacing[roundSize] || 150;
+                    if (specs.outer) {
+                        newDias.inner = getBestDia(specs.inner * 100, maxTISSpacing, 'round');
+                        newDias.outer = getBestDia(specs.outer * 100, maxTISSpacing, 'round');
+                    } else {
+                        newDias.single = getBestDia(specs.inner * 100, maxTISSpacing, 'round');
+                    }
+                    newDias.longRound = 4;
+                    const isDouble = !!specs.outer;
+                    setLongRoundCount(Number(roundSize) <= 500 ? 6 : (isDouble ? 16 : 8));
+                } else {
+                    const specs = boxDataMaster.find(d => d.std === boxStd && (boxStd === '1164' || d.cover === boxCover) && d.S === boxS && d.R === boxR);
+                    if(!specs) return;
+                    
+                    const wFace = (specs.S + 2*specs.T);
+                    const hFace = (specs.R + 2*specs.T);
+
+                    if (isUniform) {
+                        const availableDias = [4, 5, 6, 7, 8, 9, 10, 12];
+                        let bestUniformDia = 12; 
+                        
+                        for (const dia of availableDias) {
+                            const cAs1 = calculateSteel(specs.As1, dia, 100, 'box');
+                            const cAs2 = calculateSteel(specs.As2, dia, 100, 'box');
+                            const cAs3 = calculateSteel(specs.As3, dia, 100, 'box');
+                            const cAs4 = calculateSteel(specs.As4, dia, 100, 'box');
+                            const cLTop = calculateSteel(specs.LTop, dia, 200, 'box', true, wFace);
+                            const cLBot = calculateSteel(specs.LBot, dia, 200, 'box', true, wFace);
+                            const cLSide = calculateSteel(specs.LSide, dia, 200, 'box', true, hFace);
+
+                            const allPass = [cAs1, cAs2, cAs3, cAs4, cLTop, cLBot, cLSide].every(
+                                c => c && c.isPass && c.actualSpacing >= 50
+                            );
+
+                            if (allPass) {
+                                bestUniformDia = dia;
+                                break;
+                            }
+                        }
+
+                        newDias.As1 = bestUniformDia;
+                        newDias.As2 = bestUniformDia;
+                        newDias.As3 = bestUniformDia;
+                        newDias.As4 = bestUniformDia;
+                        newDias.LTop = bestUniformDia;
+                        newDias.LBot = bestUniformDia;
+                        newDias.LSide = bestUniformDia;
+                    } else {
+                        newDias.As1 = getBestDia(specs.As1, 100, 'box');
+                        newDias.As2 = getBestDia(specs.As2, 100, 'box');
+                        newDias.As3 = getBestDia(specs.As3, 100, 'box');
+                        newDias.As4 = getBestDia(specs.As4, 100, 'box');
+                        newDias.LTop = getBestDia(specs.LTop, 200, 'box', true, wFace);
+                        newDias.LBot = getBestDia(specs.LBot, 200, 'box', true, wFace);
+                        newDias.LSide = getBestDia(specs.LSide, 200, 'box', true, hFace);
+                    }
+                }
+                setBarDias(newDias);
+            };
+
+            const calculation = useMemo(() => {
+                if (mode === 'round') {
+                    const specs = roundPipeData[roundClass]?.[roundSize];
+                    if (!specs) return { type: 'loading' };
+                    const maxTISSpacing = roundPipeData.maxSpacing[roundSize] || 150;
+
+                    if (specs.outer) {
+                        return {
+                            type: 'round_double',
+                            results: {
+                                inner: calculateSteel(specs.inner * 100, barDias.inner, maxTISSpacing, 'round'),
+                                outer: calculateSteel(specs.outer * 100, barDias.outer, maxTISSpacing, 'round')
+                            }
+                        };
+                    } else {
+                        return {
+                            type: 'round_single',
+                            result: calculateSteel(specs.inner * 100, barDias.single, maxTISSpacing, 'round')
+                        };
+                    }
+                } else {
+                    const specs = boxDataMaster.find(d => d.std === boxStd && (boxStd === '1164' || d.cover === boxCover) && d.S === boxS && d.R === boxR);
+                    if (!specs) return { type: 'loading' };
+                    
+                    const wFace = specs.S + 2*specs.T;
+                    const hFace = specs.R + 2*specs.T;
+
+                    return {
+                        type: 'box',
+                        specs,
+                        results: {
+                            As1: calculateSteel(specs.As1, barDias.As1, 100, 'box'),
+                            As2: calculateSteel(specs.As2, barDias.As2, 100, 'box'),
+                            As3: calculateSteel(specs.As3, barDias.As3, 100, 'box'),
+                            As4: calculateSteel(specs.As4, barDias.As4, 100, 'box'),
+                            LTop: calculateSteel(specs.LTop, barDias.LTop, 200, 'box', true, wFace),
+                            LBot: calculateSteel(specs.LBot, barDias.LBot, 200, 'box', true, wFace),
+                            LSide: calculateSteel(specs.LSide, barDias.LSide, 200, 'box', true, hFace)
+                        }
+                    };
+                }
+            }, [mode, roundSize, roundClass, boxStd, boxCover, boxS, boxR, barDias]);
+
+            const costEstimation = useMemo(() => {
+                if (!calculation || calculation.type === 'loading') return null;
+
+                const concreteCostPerM3 = (costs.cementKg * costs.cementPrice) + (costs.sandKg * costs.sandPrice) + (costs.stoneKg * costs.stonePrice);
+                let volM3 = 0, baseTransverseSteelKg = 0, baseLongitudinalSteelKg = 0; 
+
+                if (mode === 'round') {
+                    const D = Number(roundSize);
+                    const T = roundThickness[D] || (D / 10);
+                    const R_out = (D/2 + T) / 1000;
+                    const R_in = (D/2) / 1000;
+                    volM3 = Math.PI * (Math.pow(R_out, 2) - Math.pow(R_in, 2)) * 1;
+                    
+                    const circumferenceOuter = Math.PI * ((D + T) / 1000); 
+                    const circumferenceInner = Math.PI * ((D + T/2) / 1000); 
+                    
+                    if (calculation.type === 'round_single') {
+                        const as = parseFloat(calculation.result?.providedAs || 0); 
+                        baseTransverseSteelKg = (as / 1000000) * circumferenceOuter * 7850;
+                    } else if (calculation.type === 'round_double') {
+                        const asInner = parseFloat(calculation.results?.inner?.providedAs || 0);
+                        const asOuter = parseFloat(calculation.results?.outer?.providedAs || 0);
+                        baseTransverseSteelKg = ((asInner / 1000000) * circumferenceInner * 7850) + ((asOuter / 1000000) * circumferenceOuter * 7850);
+                    }
+                    
+                    const singleLongArea = Math.PI * Math.pow(barDias.longRound / 2, 2);
+                    baseLongitudinalSteelKg = (longRoundCount * singleLongArea / 1000000) * 1 * 7850;
+
+                } else {
+                    const specs = calculation.specs;
+                    const W = (specs.S + 2 * specs.T) / 1000; 
+                    const H = (specs.R + 2 * specs.T) / 1000; 
+                    const s_m = specs.S / 1000;
+                    const r_m = specs.R / 1000;
+                    volM3 = (W * H - s_m * r_m) * 1;
+
+                    const as1 = parseFloat(calculation.results?.As1?.providedAs || 0);
+                    const as2 = parseFloat(calculation.results?.As2?.providedAs || 0);
+                    const as3 = parseFloat(calculation.results?.As3?.providedAs || 0);
+                    const as4 = parseFloat(calculation.results?.As4?.providedAs || 0);
+
+                    const volTransTop = (as2 / 1000000) * W;
+                    const volTransBot = (as3 / 1000000) * W;
+                    const volTransSides = ((as1 + as4) / 1000000) * H * 2; 
+                    baseTransverseSteelKg = (volTransTop + volTransBot + volTransSides) * 7850;
+
+                    const lTopArea = parseFloat(calculation.results?.LTop?.reqAs || 0);
+                    const lBotArea = parseFloat(calculation.results?.LBot?.reqAs || 0);
+                    const lSideArea = parseFloat(calculation.results?.LSide?.reqAs || 0);
+
+                    const volLongTop = lTopArea / 1000000;
+                    const volLongBot = lBotArea / 1000000;
+                    const volLongSides = (lSideArea / 1000000) * 2; 
+                    
+                    baseLongitudinalSteelKg = (volLongTop + volLongBot + volLongSides) * 7850;
+                }
+
+                const totalBaseSteelKg = baseTransverseSteelKg + baseLongitudinalSteelKg;
+                const finalSteelWeightKg = totalBaseSteelKg * (1 + (costs.steelAllowance / 100));
+
+                return {
+                    concreteCostPerM3,
+                    volM3: volM3.toFixed(3),
+                    transverseSteelKg: baseTransverseSteelKg.toFixed(2),
+                    longitudinalSteelKg: baseLongitudinalSteelKg.toFixed(2),
+                    steelWeightKg: finalSteelWeightKg.toFixed(2),
+                    totalConcreteCost: Math.round(volM3 * concreteCostPerM3),
+                    totalSteelCost: Math.round(finalSteelWeightKg * costs.steelPrice),
+                    totalCost: Math.round((volM3 * concreteCostPerM3) + (finalSteelWeightKg * costs.steelPrice))
+                };
+            }, [mode, roundSize, calculation, costs, longRoundCount, barDias.longRound]);
+
+            const RoundLongCard = () => {
+                const D = Number(roundSize);
+                const isDouble = !!roundPipeData[roundClass]?.[roundSize]?.outer;
+                const minBars = D <= 500 ? 6 : (isDouble ? 16 : 8);
+                const isPass = longRoundCount >= minBars && barDias.longRound >= 4;
+                const singleLongArea = Math.PI * Math.pow(barDias.longRound / 2, 2);
+                const providedLongAs = (longRoundCount * singleLongArea).toFixed(2);
+
+                return (
+                    <div className={`p-4 rounded-xl border ${isPass ? 'bg-white border-slate-200' : 'bg-red-50 border-red-200'} shadow-sm flex flex-col h-full`}>
+                        <div className="flex justify-between items-center mb-3">
+                            <div className="flex items-center gap-2">
+                                <i className="ph-fill ph-arrows-out-line-horizontal text-lg text-purple-500"></i>
+                                <h3 className="text-sm font-bold text-slate-800">เหล็กเสริมตามยาว (กันร้าว)</h3>
+                            </div>
+                            <span className="text-xs font-semibold px-2 py-1 bg-slate-100 rounded text-slate-600">
+                                Req: ขั้นต่ำ {minBars} เส้น
+                            </span>
+                        </div>
+                        <div className="flex-1 flex flex-col gap-2">
+                            <div className="flex justify-between items-center bg-slate-50 p-2 rounded border border-slate-100">
+                                <span className="text-xs text-slate-500 font-medium">ขนาดเหล็ก (Ø)</span>
+                                <select 
+                                    value={barDias.longRound} 
+                                    onChange={(e) => updateBarDia('longRound', e.target.value)}
+                                    className="text-sm font-bold text-blue-700 bg-white border border-slate-200 rounded px-2 py-1 outline-none focus:border-blue-500 shadow-sm cursor-pointer"
+                                >
+                                    {[4, 5, 6, 7, 8, 9, 10, 12].map(d => (
+                                        <option key={d} value={d}>Ø {d} มม.</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="flex justify-between items-center bg-slate-50 p-2 rounded">
+                                <span className="text-xs text-slate-500">จำนวนเส้น</span>
+                                <div className="flex items-center gap-2">
+                                    <input 
+                                        type="number" 
+                                        value={longRoundCount}
+                                        onChange={(e) => setLongRoundCount(Number(e.target.value))}
+                                        min={minBars}
+                                        className="w-16 text-sm font-bold text-slate-800 bg-white border border-slate-200 rounded px-2 py-1 outline-none focus:border-blue-500 text-right"
+                                    />
+                                    <span className="text-sm font-bold text-slate-800">เส้น</span>
+                                </div>
+                            </div>
+                            {barDias.longRound < 4 && (
+                                <div className="text-[10px] text-red-600 leading-tight">
+                                    *ขนาดเหล็กต้องไม่น้อยกว่า Ø 4 มม.
+                                </div>
+                            )}
+                            {longRoundCount < minBars && (
+                                <div className="text-[10px] text-red-600 leading-tight">
+                                    *จำนวนเส้นน้อยกว่ามาตรฐานกำหนด ({minBars} เส้น)
+                                </div>
+                            )}
+                        </div>
+                        <div className={`mt-3 pt-2 border-t flex justify-between items-center ${isPass ? 'border-slate-100' : 'border-red-200'}`}>
+                            <span className="text-xs text-slate-500">หน้าตัดรวมที่ได้</span>
+                            <div className="flex items-center gap-1">
+                                <span className={`text-sm font-bold ${isPass ? 'text-green-600' : 'text-red-600'}`}>
+                                    {providedLongAs} มม.²
+                                </span>
+                                {isPass ? 
+                                    <i className="ph-bold ph-check-circle text-green-500"></i> : 
+                                    <i className="ph-bold ph-x-circle text-red-500"></i>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            return (
+                <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-6">
+                    <header className="text-center mb-8">
+                        <h1 className="text-2xl md:text-3xl font-bold text-slate-800">โปรแกรมคำนวณสเปคเหล็กท่อคอนกรีต (มอก.)</h1>
+                        <p className="text-slate-500 mt-2">อ้างอิงฐานข้อมูล มอก. 128-2560, 1164-2559 และ 1166-2559 แบบละเอียด</p>
+                    </header>
+
+                    <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+                        {/* --- LEFT PANEL: Settings --- */}
+                        <div className="xl:col-span-3 space-y-6">
+                            <div className="glass-panel p-6 rounded-2xl shadow-sm space-y-4">
+                                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                    <i className="ph-fill ph-sliders"></i> ตั้งค่าหน้าตัดท่อ
+                                </h2>
+                                
+                                <div className="flex bg-slate-100 p-1 rounded-lg">
+                                    <button onClick={() => setMode('round')} className={`flex-1 py-2 text-sm font-semibold rounded-md transition ${mode === 'round' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}>ท่อกลม</button>
+                                    <button onClick={() => setMode('box')} className={`flex-1 py-2 text-sm font-semibold rounded-md transition ${mode === 'box' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>ท่อเหลี่ยม</button>
+                                </div>
+
+                                {mode === 'round' && (
+                                    <div className="space-y-4 animate-fade-in">
+                                        <div>
+                                            <label className="text-xs font-semibold text-slate-500 mb-1 block">ชั้นคุณภาพ (มอก. 128)</label>
+                                            <select value={roundClass} onChange={e => { setRoundClass(e.target.value); }} className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500">
+                                                <option value="class1">คสล. 1 (รับน้ำหนักสูงสุด)</option>
+                                                <option value="class2">คสล. 2</option>
+                                                <option value="class3">คสล. 3</option>
+                                                <option value="class4">คสล. 4 (รับน้ำหนักต่ำ)</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-semibold text-slate-500 mb-1 block">ขนาดเส้นผ่านศูนย์กลาง (มม.)</label>
+                                            <select value={roundSize} onChange={e => setRoundSize(e.target.value)} className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-blue-500">
+                                                {Object.keys(roundPipeData[roundClass] || {}).map(size => (
+                                                    <option key={size} value={size}>Ø {size} มม.</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {mode === 'box' && (
+                                    <div className="space-y-4 animate-fade-in">
+                                        <div>
+                                            <label className="text-xs font-semibold text-slate-500 mb-1 block">มาตรฐาน มอก.</label>
+                                            <select value={boxStd} onChange={e => setBoxStd(e.target.value)} className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-indigo-500">
+                                                <option value="1166">มอก. 1166 (ใต้ผิวจราจร)</option>
+                                                <option value="1164">มอก. 1164 (ใต้ทางเท้า)</option>
+                                            </select>
+                                        </div>
+                                        {boxStd === '1166' && (
+                                            <div>
+                                                <label className="text-xs font-semibold text-slate-500 mb-1 block">ความลึกวัสดุถม (เมตร)</label>
+                                                <select value={boxCover} onChange={e => setBoxCover(e.target.value)} className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-indigo-500">
+                                                    <option value="0.6-0.9">0.6 ถึง 0.9 เมตร</option>
+                                                    <option value="0.9-1.5">มากกว่า 0.9 ถึง 1.5 เมตร</option>
+                                                    <option value="1.5-3.0">มากกว่า 1.5 ถึง 3.0 เมตร</option>
+                                                </select>
+                                            </div>
+                                        )}
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="text-xs font-semibold text-slate-500 mb-1 block">กว้างใน (S)</label>
+                                                <select value={boxS} onChange={e => setBoxS(Number(e.target.value))} className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-indigo-500">
+                                                    {availableBoxS.map(s => <option key={s} value={s}>{s} มม.</option>)}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-semibold text-slate-500 mb-1 block">สูงใน (R)</label>
+                                                <select value={boxR} onChange={e => setBoxR(Number(e.target.value))} className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-indigo-500">
+                                                    {availableBoxR.map(r => <option key={r} value={r}>{r} มม.</option>)}
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="pt-4 flex flex-col gap-2">
+                                    {mode === 'round' ? (
+                                        <button onClick={() => handleAutoAdjust(false)} className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-white text-sm font-semibold rounded-lg shadow-sm transition flex items-center justify-center gap-2">
+                                            <i className="ph-bold ph-magic-wand"></i> เลือกขนาดเหล็กอัตโนมัติ
+                                        </button>
+                                    ) : (
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <button onClick={() => handleAutoAdjust(false)} className="py-2.5 bg-slate-800 hover:bg-slate-700 text-white text-[11px] sm:text-xs font-semibold rounded-lg shadow-sm transition flex flex-col items-center justify-center gap-1">
+                                                <i className="ph-bold ph-magic-wand text-lg"></i> ออโต้ (แยกขนาด)
+                                            </button>
+                                            <button onClick={() => handleAutoAdjust(true)} className="py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] sm:text-xs font-semibold rounded-lg shadow-sm transition flex flex-col items-center justify-center gap-1">
+                                                <i className="ph-bold ph-squares-four text-lg"></i> ออโต้ (ขนาดเดียว)
+                                            </button>
+                                        </div>
+                                    )}
+                                    <button onClick={() => setShowDiagram(true)} className="w-full py-2.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-semibold rounded-lg shadow-sm transition flex items-center justify-center gap-2 mt-2">
+                                        <i className="ph-bold ph-cube"></i> ดูโมเดลการสานเหล็ก 3D
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {}
+                        {/* --- CENTER PANEL: Steel Specs & Results --- */}
+                        <div className="xl:col-span-9 space-y-6">
+                            <div className="glass-panel p-6 rounded-2xl shadow-sm min-h-[500px]">
+                                <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2 border-b pb-3">
+                                    <div className="p-1.5 bg-blue-100 text-blue-600 rounded-lg">
+                                        <i className="ph-fill ph-check-square-offset"></i>
+                                    </div>
+                                    ผลการจัดระยะตะแกรงเหล็ก
+                                </h2>
+                                
+                                {calculation.type === 'loading' && (
+                                    <div className="text-center p-12 text-slate-400">
+                                        <i className="ph-bold ph-warning text-4xl mb-3"></i>
+                                        <p>ไม่มีข้อมูลสเปคท่อขนาดนี้ในชั้นคุณภาพหรือระดับดินถมที่เลือก</p>
+                                    </div>
+                                )}
+
+                                {calculation.type === 'round_single' && (
+                                    <div className="max-w-3xl mx-auto animate-fade-in space-y-6">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <BoxResultCard title="เหล็กเสริมตามขวาง ท่อกลม" calc={calculation.result} icon="ph-circle-notch" colorClass="text-blue-500" currentDia={barDias.single} onDiaChange={(val) => updateBarDia('single', val)} />
+                                            <RoundLongCard />
+                                        </div>
+                                        <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm text-slate-700 leading-relaxed shadow-sm">
+                                            <div className="flex items-center gap-2 mb-2 font-bold text-blue-800"><i className="ph-fill ph-info"></i> สรุปสเปคตามมาตรฐาน มอก. 128</div>
+                                            <p className="mb-2">คอนกรีต <strong>{roundClass.toUpperCase().replace('CLASS', 'คสล. ')}</strong> ขนาด <strong>Ø {roundSize} มม.</strong> ความหนาผนัง <strong>{roundThickness[roundSize] || (Number(roundSize)/10)} มม.</strong></p>
+                                            <ul className="list-disc list-inside space-y-1">
+                                                <li>เหล็กเสริมตามขวาง: <strong>Ø {barDias.single} มม. @ {calculation.result.actualSpacing} มม.</strong></li>
+                                                <li>เหล็กเสริมตามยาว: <strong>{longRoundCount} เส้น (Ø {barDias.longRound} มม.)</strong></li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {calculation.type === 'round_double' && (
+                                    <div className="animate-fade-in space-y-6">
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <BoxResultCard title="ขวาง - วงใน (Inner)" calc={calculation.results.inner} icon="ph-circle-notch" colorClass="text-blue-500" currentDia={barDias.inner} onDiaChange={(val) => updateBarDia('inner', val)} />
+                                            <BoxResultCard title="ขวาง - วงนอก (Outer)" calc={calculation.results.outer} icon="ph-circle" colorClass="text-sky-500" currentDia={barDias.outer} onDiaChange={(val) => updateBarDia('outer', val)} />
+                                            <RoundLongCard />
+                                        </div>
+                                        <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm text-slate-700 leading-relaxed shadow-sm">
+                                            <div className="flex items-center gap-2 mb-2 font-bold text-blue-800"><i className="ph-fill ph-info"></i> สรุปสเปคตามมาตรฐาน มอก. 128</div>
+                                            <p className="mb-2">คอนกรีต <strong>{roundClass.toUpperCase().replace('CLASS', 'คสล. ')}</strong> ขนาด <strong>Ø {roundSize} มม.</strong> ความหนาผนัง <strong>{roundThickness[roundSize] || (Number(roundSize)/10)} มม.</strong></p>
+                                            <ul className="list-disc list-inside space-y-1">
+                                                <li>เหล็กเสริมขวางวงใน: <strong>Ø {barDias.inner} มม. @ {calculation.results.inner.actualSpacing} มม.</strong></li>
+                                                <li>เหล็กเสริมขวางวงนอก: <strong>Ø {barDias.outer} มม. @ {calculation.results.outer.actualSpacing} มม.</strong></li>
+                                                <li>เหล็กเสริมตามยาว: <strong>{longRoundCount} เส้น (Ø {barDias.longRound} มม.)</strong></li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {calculation.type === 'box' && (
+                                    <div className="animate-fade-in space-y-6">
+                                        <div>
+                                            <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2 border-l-4 border-indigo-500 pl-2">เหล็กเสริมตามขวาง (Transverse) - รับแรงอัด</h3>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                                <BoxResultCard title="As1 (นอก/ข้าง)" calc={calculation.results.As1} icon="ph-square-half" colorClass="text-indigo-500" currentDia={barDias.As1} onDiaChange={(val) => updateBarDia('As1', val)} />
+                                                <BoxResultCard title="As2 (ด้านบน)" calc={calculation.results.As2} icon="ph-arrow-line-up" colorClass="text-sky-500" currentDia={barDias.As2} onDiaChange={(val) => updateBarDia('As2', val)} />
+                                                <BoxResultCard title="As3 (ด้านล่าง)" calc={calculation.results.As3} icon="ph-arrow-line-down" colorClass="text-amber-500" currentDia={barDias.As3} onDiaChange={(val) => updateBarDia('As3', val)} />
+                                                <BoxResultCard title="As4 (ด้านใน)" calc={calculation.results.As4} icon="ph-square-half-bottom" colorClass="text-teal-500" currentDia={barDias.As4} onDiaChange={(val) => updateBarDia('As4', val)} />
+                                            </div>
+                                        </div>
+                                        
+                                        <div>
+                                            <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2 border-l-4 border-purple-500 pl-2">เหล็กเสริมตามยาว (Longitudinal) - กันร้าว/กระจายแรง</h3>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                <BoxResultCard title="ยาว (ด้านบน)" calc={calculation.results.LTop} icon="ph-arrows-left-right" colorClass="text-purple-500" currentDia={barDias.LTop} onDiaChange={(val) => updateBarDia('LTop', val)} />
+                                                <BoxResultCard title="ยาว (ด้านล่าง)" calc={calculation.results.LBot} icon="ph-arrows-left-right" colorClass="text-purple-500" currentDia={barDias.LBot} onDiaChange={(val) => updateBarDia('LBot', val)} />
+                                                <BoxResultCard title="ยาว (ด้านข้าง)" calc={calculation.results.LSide} icon="ph-arrows-down-up" colorClass="text-purple-500" currentDia={barDias.LSide} onDiaChange={(val) => updateBarDia('LSide', val)} />
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-100 text-sm text-slate-700 leading-relaxed shadow-sm">
+                                            <div className="flex items-center gap-2 mb-2 font-bold text-indigo-800">
+                                                <i className="ph-fill ph-info"></i> สรุปสเปคตามมาตรฐาน มอก. {boxStd}
+                                            </div>
+                                            <p className="mb-2">
+                                                ท่อเหลี่ยม กว้าง <strong>{calculation.specs.S}</strong> มม. สูง <strong>{calculation.specs.R}</strong> มม. (หนาผนัง <strong>{calculation.specs.T} มม.</strong>)
+                                                {boxStd === '1166' && <span> ความลึกดินถม <strong>{boxCover} ม.</strong></span>}
+                                            </p>
+                                            <ul className="list-disc list-inside space-y-1">
+                                                <li>ขวาง: As1=<strong>Ø{barDias.As1}@{calculation.results.As1.actualSpacing}</strong>, As2=<strong>Ø{barDias.As2}@{calculation.results.As2.actualSpacing}</strong>, As3=<strong>Ø{barDias.As3}@{calculation.results.As3.actualSpacing}</strong>, As4=<strong>Ø{barDias.As4}@{calculation.results.As4.actualSpacing}</strong></li>
+                                                <li>ยาว: บน=<strong>Ø{barDias.LTop}@{calculation.results.LTop.actualSpacing}</strong>, ล่าง=<strong>Ø{barDias.LBot}@{calculation.results.LBot.actualSpacing}</strong>, ข้าง=<strong>Ø{barDias.LSide}@{calculation.results.LSide.actualSpacing}</strong></li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* --- BOTTOM PANEL: Costs --- */}
+                        <div className="xl:col-span-12">
+                            <div className="glass-panel p-6 rounded-2xl shadow-sm animate-fade-in">
+                                <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2 border-b pb-3">
+                                    <div className="p-1.5 bg-amber-100 text-amber-600 rounded-lg">
+                                        <i className="ph-fill ph-coins"></i>
+                                    </div>
+                                    ประมาณการต้นทุนวัตถุดิบ <span className="text-sm font-normal text-slate-500">(ต่อท่อ 1 เมตร)</span>
+                                </h2>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                    <div className="space-y-4 lg:col-span-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mt-4 sm:mt-0">
+                                            <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-1.5">
+                                                <i className="ph-bold ph-flask text-slate-500"></i> Mix Design คอนกรีต (ต่อ 1 คิว)
+                                            </h3>
+                                            <div className="grid grid-cols-2 gap-3 mb-3">
+                                                <div><label className="text-xs text-slate-500 block mb-1">ปูนซีเมนต์ (กก.)</label><input type="number" value={costs.cementKg} onChange={(e) => updateCost('cementKg', e.target.value)} className="w-full p-2 bg-white border border-slate-200 rounded text-sm outline-none focus:border-blue-500" /></div>
+                                                <div><label className="text-xs text-slate-500 block mb-1">ราคา (บาท/กก.)</label><input type="number" value={costs.cementPrice} step="0.1" onChange={(e) => updateCost('cementPrice', e.target.value)} className="w-full p-2 bg-white border border-slate-200 rounded text-sm outline-none focus:border-blue-500" /></div>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3 mb-3">
+                                                <div><label className="text-xs text-slate-500 block mb-1">ทราย (กก.)</label><input type="number" value={costs.sandKg} onChange={(e) => updateCost('sandKg', e.target.value)} className="w-full p-2 bg-white border border-slate-200 rounded text-sm outline-none focus:border-blue-500" /></div>
+                                                <div><label className="text-xs text-slate-500 block mb-1">ราคา (บาท/กก.)</label><input type="number" value={costs.sandPrice} step="0.1" onChange={(e) => updateCost('sandPrice', e.target.value)} className="w-full p-2 bg-white border border-slate-200 rounded text-sm outline-none focus:border-blue-500" /></div>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div><label className="text-xs text-slate-500 block mb-1">หิน (กก.)</label><input type="number" value={costs.stoneKg} onChange={(e) => updateCost('stoneKg', e.target.value)} className="w-full p-2 bg-white border border-slate-200 rounded text-sm outline-none focus:border-blue-500" /></div>
+                                                <div><label className="text-xs text-slate-500 block mb-1">ราคา (บาท/กก.)</label><input type="number" value={costs.stonePrice} step="0.1" onChange={(e) => updateCost('stonePrice', e.target.value)} className="w-full p-2 bg-white border border-slate-200 rounded text-sm outline-none focus:border-blue-500" /></div>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                                            <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-1.5">
+                                                <i className="ph-bold ph-grid text-slate-500"></i> เหล็กเสริม
+                                            </h3>
+                                            <div className="grid grid-cols-1 gap-3">
+                                                <div><label className="text-xs text-slate-500 block mb-1">ราคาเหล็ก (บาท/กก.)</label><input type="number" value={costs.steelPrice} step="0.5" onChange={(e) => updateCost('steelPrice', e.target.value)} className="w-full p-2 bg-white border border-slate-200 rounded text-sm outline-none focus:border-blue-500" /></div>
+                                                <div><label className="text-xs text-slate-500 block mb-1">% เผื่อเศษเหล็ก+ทาบท่อน</label><input type="number" value={costs.steelAllowance} onChange={(e) => updateCost('steelAllowance', e.target.value)} className="w-full p-2 bg-white border border-slate-200 rounded text-sm outline-none focus:border-blue-500" /></div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {costEstimation && (
+                                        <div className="bg-slate-800 text-white p-6 rounded-xl flex flex-col justify-center relative overflow-hidden shadow-inner lg:col-span-1">
+                                            <div className="absolute -right-10 -top-10 opacity-10 pointer-events-none">
+                                                <i className="ph-fill ph-chart-pie-slice text-9xl"></i>
+                                            </div>
+                                            <h3 className="text-base font-bold text-slate-200 mb-6 flex items-center gap-2">สรุปต้นทุนวัสดุ</h3>
+                                            
+                                            <div className="space-y-4 relative z-10">
+                                                <div className="flex justify-between items-end border-b border-slate-700 pb-2">
+                                                    <div>
+                                                        <div className="text-sm text-slate-400">คอนกรีต</div>
+                                                        <div className="text-xs text-slate-500 mt-1">({costEstimation.volM3} m³)</div>
+                                                    </div>
+                                                    <div className="text-lg font-bold text-blue-300">{costEstimation.totalConcreteCost.toLocaleString()} ฿</div>
+                                                </div>
+                                                
+                                                <div className="flex justify-between items-end border-b border-slate-700 pb-2">
+                                                    <div>
+                                                        <div className="text-sm text-slate-400">เหล็ก (+{costs.steelAllowance}%)</div>
+                                                        <div className="text-[10px] text-slate-500 mt-1">(ขวาง: {costEstimation.transverseSteelKg} kg + ยาว: {costEstimation.longitudinalSteelKg} kg)</div>
+                                                    </div>
+                                                    <div className="text-lg font-bold text-orange-300">{costEstimation.totalSteelCost.toLocaleString()} ฿</div>
+                                                </div>
+                                            </div>
+
+                                            <div className="mt-6 pt-4 border-t border-slate-600 flex justify-between items-center relative z-10">
+                                                <span className="font-bold text-slate-300">รวม</span>
+                                                <span className="text-3xl font-black text-green-400">{costEstimation.totalCost.toLocaleString()} ฿</span>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {showDiagram && (
+                            <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in" onClick={() => setShowDiagram(false)}>
+                                <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+                                    <div className="p-4 border-b flex justify-between items-center bg-slate-50">
+                                        <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                                            <i className="ph-fill ph-cube text-blue-500 text-xl"></i>
+                                            โมเดล 3 มิติ โครงสร้างเหล็กเสริม {mode === 'round' ? 'ท่อกลม' : 'ท่อเหลี่ยม'}
+                                        </h3>
+                                        <button onClick={() => setShowDiagram(false)} className="text-slate-400 hover:text-slate-600 transition"><i className="ph-bold ph-x text-xl"></i></button>
+                                    </div>
+                                    
+                                    <div className="p-2 bg-white relative">
+                                        <div className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur px-3 py-1.5 rounded-full shadow-sm text-xs font-semibold text-slate-700 flex items-center gap-2 border border-slate-200 pointer-events-none">
+                                            <i className="ph-fill ph-hand-swipe text-blue-500 text-sm"></i>
+                                            คลิกเมาส์ค้างเพื่อหมุน และเลื่อน Scroll เพื่อซูม
+                                        </div>
+                                        <ThreeDViewer mode={mode} isDoubleLayer={calculation?.type === 'round_double'} roundLongCount={longRoundCount} />
+                                    </div>
+
+                                    <div className="p-4 bg-slate-50 border-t text-xs text-slate-500 text-center leading-relaxed">
+                                        * โมเดล 3 มิติแสดงลักษณะและตำแหน่งการจัดวางเหล็กเส้น (เพื่อความเข้าใจง่ายเบื้องต้น)<br/>
+                                        <strong>(ท่อเหลี่ยมจะแสดงทิศทางเส้นขวางด้วยสีที่ตรงกับการ์ดคำนวณด้านหลัง)</strong>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
